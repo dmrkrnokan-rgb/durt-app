@@ -1,0 +1,121 @@
+name: Init Flutter (create project + debug APK)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  init:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.0'
+
+      # Projeyi bu repo kökünde oluştur (geçerli paket adı için alt çizgi kullan)
+      - name: Create Flutter project
+        run: |
+          if [ ! -f pubspec.yaml ]; then
+            flutter create --project-name durt_app .
+          fi
+
+      - name: Ensure assets folders exist
+        run: |
+          mkdir -p assets/svg assets/splash
+
+      - name: Add dependencies
+        run: |
+          flutter pub add flutter_svg
+          flutter pub add --dev flutter_native_splash
+
+      # pubspec.yaml içinde uses-material-design satırının ARDINA assets blokunu ekle
+      - name: Add assets to pubspec
+        run: |
+          awk '{
+            print
+            if ($0 ~ /^  uses-material-design: true$/ && !done) {
+              print "  assets:"
+              print "    - assets/svg/"
+              print "    - assets/splash/splash_screen.png"
+              done=1
+            }
+          }' pubspec.yaml > pubspec.tmp && mv pubspec.tmp pubspec.yaml
+
+      # Splash konfigürasyonu ekle (dosyan zaten assets/splash/splash_screen.png)
+      - name: Add splash config
+        run: |
+          cat >> pubspec.yaml <<'YAML'
+
+flutter_native_splash:
+  fullscreen: true
+  color: "#0E2741"
+  image: assets/splash/splash_screen.png
+  background_image: assets/splash/splash_screen.png
+  android_12:
+    color: "#0E2741"
+    image: assets/splash/splash_screen.png
+  web: false
+YAML
+
+      # Minimal ana ekran (arka plan + logo)
+      - name: Write minimal main.dart
+        run: |
+          mkdir -p lib
+          cat > lib/main.dart <<'DART'
+          import 'package:flutter/material.dart';
+          import 'package:flutter_svg/flutter_svg.dart';
+          void main() => runApp(const MyApp());
+          class MyApp extends StatelessWidget {
+            const MyApp({super.key});
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                debugShowCheckedModeBanner: false,
+                home: Scaffold(
+                  body: Stack(
+                    children: [
+                      Positioned.fill(child: SvgPicture.asset('assets/svg/bg_main.svg', fit: BoxFit.cover)),
+                      Center(child: SvgPicture.asset('assets/svg/logo_main.svg', width: 180)),
+                    ],
+                  ),
+                ),
+              );
+            }
+          }
+          DART
+
+      - name: Get packages & generate splash
+        run: |
+          flutter pub get
+          dart run flutter_native_splash:create
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "ci: initialize Flutter project and configure assets/splash" || echo "No changes"
+          git push
+
+      - name: Build debug APK
+        run: flutter build apk --debug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: build/app/outputs/flutter-apk/app-debug.apk
