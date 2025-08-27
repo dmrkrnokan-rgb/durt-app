@@ -3,6 +3,9 @@ name: Init Flutter (create project + debug APK)
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write   # <-- repoya yazabilmek için
+
 jobs:
   init:
     runs-on: ubuntu-latest
@@ -29,11 +32,10 @@ jobs:
             flutter create --project-name durt_app .
           fi
 
-      # (Opsiyonel ama faydalı) flutter_svg ekle ve asset yollarını tanıt
+      # flutter_svg ekle + assets yollarını pubspec'e işle
       - name: Add deps & assets
         run: |
           flutter pub add flutter_svg
-          # assets bloklarını uses-material-design satırından sonra ekle (varsa tekrar eklemez)
           if ! grep -q "assets/svg/" pubspec.yaml; then
             awk '{
               print
@@ -46,7 +48,8 @@ jobs:
             }' pubspec.yaml > pubspec.tmp && mv pubspec.tmp pubspec.yaml
           fi
 
-      - name: Write minimal main.dart (bg_main + logo_main göster)
+      # Basit bir ana ekran yaz (ilk frame kesin gelsin)
+      - name: Write minimal main.dart
         run: |
           mkdir -p lib
           cat > lib/main.dart <<'DART'
@@ -81,6 +84,17 @@ jobs:
             }
           }
           DART
+
+      # Oluşan proje dosyalarını repoya gönder
+      - name: Commit & push generated project
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "Init Flutter skeleton via Actions"
+            git push
+          fi
 
       - name: Get dependencies
         run: flutter pub get
