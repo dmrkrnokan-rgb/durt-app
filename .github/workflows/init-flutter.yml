@@ -11,16 +11,76 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Java (required for Android build)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.22.0'
 
+      # Proje yoksa kökte oluştur
       - name: Create Flutter project if not exists
         run: |
           if [ ! -f "pubspec.yaml" ]; then
-            flutter create durt_app .
+            flutter create --project-name durt_app .
           fi
+
+      # (Opsiyonel ama faydalı) flutter_svg ekle ve asset yollarını tanıt
+      - name: Add deps & assets
+        run: |
+          flutter pub add flutter_svg
+          # assets bloklarını uses-material-design satırından sonra ekle (varsa tekrar eklemez)
+          if ! grep -q "assets/svg/" pubspec.yaml; then
+            awk '{
+              print
+              if ($0 ~ /^  uses-material-design: true$/ && !done) {
+                print "  assets:"
+                print "    - assets/svg/"
+                print "    - assets/splash/splash_screen.png"
+                done=1
+              }
+            }' pubspec.yaml > pubspec.tmp && mv pubspec.tmp pubspec.yaml
+          fi
+
+      - name: Write minimal main.dart (bg_main + logo_main göster)
+        run: |
+          mkdir -p lib
+          cat > lib/main.dart <<'DART'
+          import 'package:flutter/material.dart';
+          import 'package:flutter_svg/flutter_svg.dart';
+          void main() => runApp(const MyApp());
+          class MyApp extends StatelessWidget {
+            const MyApp({super.key});
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                debugShowCheckedModeBanner: false,
+                home: Scaffold(
+                  body: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: SvgPicture.asset(
+                          'assets/svg/bg_main.svg',
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                      Center(
+                        child: SvgPicture.asset(
+                          'assets/svg/logo_main.svg',
+                          width: 180,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+          }
+          DART
 
       - name: Get dependencies
         run: flutter pub get
@@ -29,7 +89,7 @@ jobs:
         run: flutter build apk --debug
 
       - name: Upload APK
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: app-debug
           path: build/app/outputs/flutter-apk/app-debug.apk
